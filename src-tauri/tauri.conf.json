@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Akshay's Kavach",
+  "productName": "Akshays Kavach",
   "version": "1.0.0",
   "identifier": "com.aksha.kavach",
   "build": {
