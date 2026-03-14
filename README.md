@@ -41,5 +41,45 @@ Developer: Akshay Sharma
 
 Feedback: Use the [ COMM LINK ] terminal button inside the application to format and send encrypted feedback directly to the developer's inbox.
 
+## ⚙️ Under the Hood (Architecture)
+
+Kavach is built for absolute performance and zero latency, running entirely locally on your machine with **zero cloud dependencies**.
+
+* **The Engine (Rust):** The core interception logic, OS-level hooks, and cryptographic file caching are written in Rust for memory safety, concurrency, and bare-metal speed.
+* **The Command Center (React/TypeScript):** The FUI dashboard operates in an isolated webview, ensuring the UI thread never blocks the security engine.
+* **The Bridge (Tauri):** Secure, asynchronous Inter-Process Communication (IPC) bridges the frontend dashboard and the kernel-level watcher.
+* **The Ledger (SQLite):** All telemetry, temporal rollback states, and audit logs are stored locally in an encrypted, high-speed SQLite database.
+
+---
+
+## 💻 System Compatibility & Requirements
+
+Kavach acts as an emergency brake for your operating system and requires deep system access to intercept autonomous processes.
+
+* **Windows:** Windows 10 / 11 (64-bit). *Note: Must be run as Administrator to enable process interception.*
+* **macOS:** macOS 13 Ventura or newer (Apple Silicon M1/M2/M3 & Intel supported). *Note: Requires Full Disk Access and Accessibility permissions upon first launch.*
+* **Linux:** Coming in a future update (currently testing `.AppImage` deployment).
+* **System Footprint:** < 50MB RAM at idle, ~15MB disk space.
+
+---
+
+## 🚀 Roadmap: What's Next in v2.0
+
+We are continuously expanding the perimeter. Planned features for the next major deployment:
+
+* **The Faraday Clipboard:** Intercept and block background agents from reading your OS clipboard history without explicit user consent.
+* **Biometric "Nuclear" Authorization:** Hook into native OS hardware (TouchID / Windows Hello) to require physical fingerprint verification before an agent can touch `CRITICAL_LOCKED` directories.
+* **Blast Radius Predictor:** AST (Abstract Syntax Tree) parsing to visually simulate what will break in your project *before* you approve an agent's file deletion.
+
+---
+
+## ⚠️ Troubleshooting & False Positives (Important)
+
+Because Kavach is a low-level, compiled security executable that actively monitors other processes, your operating system's default antivirus may flag it as suspicious upon the first download. **This is a standard false positive for new, unsigned security tools.**
+
+* **Windows SmartScreen:** If blocked, click `More info` -> `Run anyway`.
+* **macOS Gatekeeper:** If you receive an "unidentified developer" warning, open `System Settings` -> `Privacy & Security`, scroll down, and click `Open Anyway` for Kavach.
+* **Agent Alert Fatigue:** If Kavach is throwing too many Veto alerts for standard OS background tasks, ensure your `System Maintenance` trust scopes are toggled ON in the configuration panel.
+
 📜 License
 Kavach is proudly released as freeware under the MIT License. Permanent attribution to Akshay Sharma is required in all forks, distributions, and derivatives.
