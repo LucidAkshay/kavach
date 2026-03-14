@@ -1,0 +1,276 @@
+@import "tailwindcss";
+
+@theme {
+  --color-hud-bg: #050914;
+  --color-hud-panel: #0a1122;
+  --color-hud-cyan: #22d3ee; /* cyan-400 */
+  --color-hud-cyan-dim: rgba(34, 211, 238, 0.15);
+  --color-hud-cyan-border: rgba(34, 211, 238, 0.4);
+  
+  --color-hud-amber: #fbbf24; /* amber-400 */
+  --color-hud-amber-dim: rgba(251, 191, 36, 0.15);
+  
+  --color-hud-crimson: #f43f5e; /* rose-500 */
+  --color-hud-crimson-dim: rgba(244, 63, 94, 0.15);
+  
+  --color-hud-emerald: #10b981; /* emerald-500 */
+  
+  --color-hud-text-primary: #e2e8f0; /* slate-200 */
+  --color-hud-text-muted: #64748b; /* slate-500 */
+  
+  --font-sans: 'Rajdhani', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 1. BASE SETUP & MICRO-GRID
+ * ───────────────────────────────────────────────────────────── */
+body {
+  background-color: var(--color-hud-bg);
+  background-image: 
+    linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+  background-size: 30px 30px;
+  background-position: center center;
+  color: var(--color-hud-text-primary);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  overflow: hidden; /* App controls its own overflow */
+}
+
+/* Hide scrollbars globally */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 2. TYPOGRAPHY HIERARCHY (Strict & Dense)
+ * ───────────────────────────────────────────────────────────── */
+.hud-title {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-hud-text-primary);
+}
+
+.hud-data {
+  font-family: var(--font-mono);
+  font-size: 0.75rem; /* text-xs */
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hud-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--color-hud-text-muted);
+}
+
+.hud-value-massive {
+  font-family: var(--font-mono);
+  font-size: 4rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 3. GEOMETRY: CHAMFERED PANELS (clip-path)
+ * ───────────────────────────────────────────────────────────── */
+.hud-panel {
+  position: relative;
+  background-color: var(--color-hud-panel);
+  /* Top-left chamfer, Bottom-right chamfer */
+  clip-path: polygon(
+    15px 0%, 
+    100% 0%, 
+    100% calc(100% - 15px), 
+    calc(100% - 15px) 100%, 
+    0% 100%, 
+    0% 15px
+  );
+  padding: 1rem;
+}
+
+/* The glowing 0.5px border effect using a nested pseudoelement */
+.hud-panel::before {
+  content: '';
+  position: absolute;
+  top: 1px; left: 1px; right: 1px; bottom: 1px;
+  background-color: var(--color-hud-panel);
+  clip-path: polygon(
+    14px 0%, 
+    100% 0%, 
+    100% calc(100% - 14px), 
+    calc(100% - 14px) 100%, 
+    0% 100%, 
+    0% 14px
+  );
+  z-index: -1;
+}
+
+.hud-panel::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--color-hud-cyan-border);
+  z-index: -2;
+  box-shadow: inset 0 0 10px var(--color-hud-cyan-dim);
+}
+
+/* Smaller chamfer for interior cards/buttons */
+.hud-card {
+  position: relative;
+  background-color: rgba(10, 17, 34, 0.6);
+  border: 1px solid var(--color-hud-cyan-border);
+  clip-path: polygon(
+    8px 0%, 
+    100% 0%, 
+    100% calc(100% - 8px), 
+    calc(100% - 8px) 100%, 
+    0% 100%, 
+    0% 8px
+  );
+  transition: all 0.2s ease;
+}
+.hud-card:hover {  
+  background-color: var(--color-hud-cyan-dim);
+  border-color: var(--color-hud-cyan);
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 4. FUI DECORATIVE ELEMENTS (Bracketting, Scanning Lines)
+ * ───────────────────────────────────────────────────────────── */
+
+/* Tactical brackets on hover */
+.hud-bracketed {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+.hud-bracketed::before,
+.hud-bracketed::after {
+  content: '';
+  position: absolute;
+  height: 50%;
+  width: 6px;
+  border: 2px solid transparent;
+  transition: all 0.2s ease;
+  opacity: 0;
+}
+.hud-bracketed::before {
+  left: -8px;
+  top: 25%;
+  border-right: none;
+}
+.hud-bracketed::after {
+  right: -8px;
+  top: 25%;
+  border-left: none;
+}
+.hud-bracketed:hover::before,
+.hud-bracketed:hover::after {
+  border-color: var(--color-hud-cyan);
+  opacity: 1;
+}
+.hud-bracketed:hover::before { left: -12px; }
+.hud-bracketed:hover::after { right: -12px; }
+
+/* CRT Scanning Line */
+.crt-scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--color-hud-emerald);
+  box-shadow: 0 0 10px var(--color-hud-emerald);
+  opacity: 0.6;
+  animation: scan 4s linear infinite;
+  pointer-events: none;
+  z-index: 50;
+}
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(800px); } /* Adjust based on container height */
+}
+
+/* Decrypting Text Effect (Keyframes) */
+@keyframes flash-green {
+  0%, 100% { color: var(--color-hud-text-primary); }
+  50% { color: var(--color-hud-emerald); text-shadow: 0 0 8px var(--color-hud-emerald); }
+}
+.animate-decrypt {
+  animation: flash-green 0.8s ease-out forwards;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 5. UTILITY ANIMATIONS
+ * ───────────────────────────────────────────────────────────── */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+@keyframes spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+.animate-spin-reverse {
+  animation: spin-reverse 8s linear infinite;
+}
+@keyframes pulse-danger {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 5px var(--color-hud-crimson)); }
+  50% { opacity: 0.4; filter: drop-shadow(0 0 15px var(--color-hud-crimson)); }
+}
+.animate-pulse-danger {
+  animation: pulse-danger 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 6. DECORATIVE FUI ACCENTS (Crosshairs, Barcodes)
+ * ───────────────────────────────────────────────────────────── */
+.fui-crosshair {
+  position: absolute;
+  width: 12px; height: 12px;
+}
+.fui-crosshair::before, .fui-crosshair::after {
+  content: ''; position: absolute; background: var(--color-hud-cyan-border);
+}
+.fui-crosshair::before { top: 50%; left: 0; right: 0; height: 1px; }
+.fui-crosshair::after { left: 50%; top: 0; bottom: 0; width: 1px; }
+
+.fui-crosshair.top-left { top: 4px; left: 4px; }
+.fui-crosshair.top-right { top: 4px; right: 4px; }
+.fui-crosshair.bottom-left { bottom: 4px; left: 4px; }
+.fui-crosshair.bottom-right { bottom: 4px; right: 4px; }
+
+.fui-barcode {
+  display: inline-block;
+  height: 20px;
+  width: 60px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--color-hud-text-muted) 0px,
+    var(--color-hud-text-muted) 2px,
+    transparent 2px,
+    transparent 4px,
+    var(--color-hud-text-muted) 4px,
+    var(--color-hud-text-muted) 5px,
+    transparent 5px,
+    transparent 8px
+  );
+  opacity: 0.3;
+}
