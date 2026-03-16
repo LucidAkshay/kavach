@@ -30,28 +30,55 @@ Sitting silently between the AI and your OS kernel, Kavach does not just "detect
 
 ---
 
-## ⚡ The Arsenal: Core Features
+## ⚡ The Arsenal: Comprehensive Capabilities
 
-Kavach `v1.0.0` is armed with an array of active defense mechanisms designed to outsmart and contain rogue agents.
+Kavach `v1.0.0` is armed with an exhaustive array of active defense mechanisms, operating at both the kernel and application layers to outsmart and contain rogue agents.
 
-### 🖥️ 2080 Sci-Fi Command Center (FUI)
-Experience a high-density, "Spatial Computing" interface. Designed with a deep-void aesthetic, emerald telemetry streams, and radioactive amber alerts, Kavach provides professional-grade visibility without terminal clutter.
+### 🌌 Flagship Tactical Mechanics
+* **Phantom Workspace (File-System Ghosting):** Intercepts destructive file operations and silently redirects them to a hidden `.kavach_phantom` directory. The agent believes it succeeded; your actual files remain untouched.
+* **Temporal Rollback (The "Undo" Engine):** Automatic 50MB-capped cryptographic caching of all file modifications, enabling instant 1-click restoration of any mangled file.
+* **The Turing Protocol (Anti-RPA Force):** Actively rejects synthetic mouse injections (`LLMHF_INJECTED`) and utilizes randomized 3-character Auth Codes to ensure only a human can override the firewall.
+* **Network Ghost Mode:** Spoofs high-risk outbound requests (RU/CN/KP nodes) with mock `200 OK` success responses, neutralizing exfiltration without alerting the agent.
+* **Honeypot Decoy Architecture:** Deploys a "sugar-trap" `system_auth_tokens.json` file. Any process attempting to read it triggers an immediate High-Risk Lockdown.
 
-### 👻 Phantom Workspace (File-System Ghosting)
-Activate a virtualized sandbox for destructive processes. When a restricted agent attempts to overwrite or delete sensitive code, Kavach intercepts the system call and redirects the action to a hidden phantom directory. **The agent believes it succeeded; your actual files remain completely untouched.**
+### 🦀 Core Security Engine (Rust Layer)
+* **Zero-Trust OS Monitoring:** Real-time, low-level system call interception utilizing a multi-threaded `notify` watcher for extreme performance.
+* **The Janitor Protocol:** Intelligent auto-whitelisting of standard Windows system maintenance paths (`%TEMP%`, `Prefetch`, `Logs`) to eliminate alert fatigue.
+* **High-Velocity Loop Break:** Heuristic detection of repetitive command patterns (e.g., recursive `npm install` loops) to force automatic agent suspension.
+* **Biometric Hardshake:** Simulated hardware-level authentication requirements (Windows Hello / TouchID) for any modification to critical OS directories.
+* **Aggressive Kernel-Level Filtering:** Drops thousands of background OS noise events per second before they ever cross the IPC bridge, ensuring 0% UI lag.
 
-### ⏳ Temporal Rollback (The "Undo" Engine)
-Accidental AI deletions are no longer fatal. Kavach maintains a low-level, cryptographic micro-cache of file modifications. Did an AI mangle your configuration? A one-click **Rollback** restores the file to its exact state from milliseconds ago.
+### 🧠 Category 1: The Brain (Behavioral Analysis)
+* **Gag Order (PII Sanitizer):** Real-time entropy and regex scanning for OpenAI/AWS keys, credit cards, and emails in outbound strings.
+* **Chokehold (Resource Throttling):** Dynamic monitoring and CPU/RAM usage capping for target agent PIDs using `sysinfo`.
+* **Semantic Intent Engine:** Heuristic danger scoring that analyzes the "why" behind a file deletion or modification to predict malicious intent.
 
-### 🕸️ Network Ghost Mode
-Stop data exfiltration without crashing the agent's workflow. Kavach intercepts outbound network payloads to unauthorized domains, drops the data, and returns a spoofed `200 OK` success response to blind the malicious agent.
+### 🛡️ Category 2: The Shield (OS Hardening)
+* **Faraday Clipboard Guard:** Active blocking of unauthorized clipboard read/write attempts by background automated processes.
+* **Phantom Vault:** Virtualized `.env` injection system that serves mock credentials to untrustworthy agents while masking real values.
+* **Child-Process Quarantine:** Hierarchical scanning that automatically restricts permissions for any process spawned by a monitored agent.
 
-### 🧠 The Turing Protocol
-Absolute hardware-level protection against RPA and synthetic interactions. Kavach actively rejects synthetic mouse injections (e.g., `LLMHF_INJECTED`) and utilizes adversarial UI noise to blind AI vision models. **Only a living human can click "Approve" on the firewall.**
+### 🚪 Category 3: The Gate (Network & DLP)
+* **Micro-Watermarking:** Forensically injects zero-width Unicode characters into sensitive code exports for leak tracking.
+* **Token Burn-Rate Limiter:** Implementation of a 50k token/hr hard cap for AI APIs with real-time HUD tracking.
+* **Zero-Day Threat Matrix:** Real-time synchronization with C2 domain blocklists to identify known malware nodes.
 
-### 🪤 Counter-Intelligence Traps
-* **The Mirror Maze:** Deploy recursive directory traps with fake credentials to tarpit scraping agents.
-* **Poison Context:** Inject mock "self-destruct" payloads into an agent's prompt stream to force a safe, programmatic shutdown.
+### 🪤 Category 4: The Trap (Counter-Intelligence)
+* **Mirror Maze:** Deploys a 5-level recursive directory trap with fake credentials to tarpit and confuse scraping agents.
+* **Poison Context Injection:** Feeds mock `TERMINATE_SELF` and `REVOKED_AUTH` payloads into an agent's stdin buffer.
+* **Simulated Shell:** Intercepts destructive commands (like `rm -rf /`) and returns fake "Success" exit codes to the agent.
+* **Synthetic Delay (Tarpitting):** Programmable 5-60s execution delays to throttle and frustrate brute-force automated attacks.
+
+### 📦 Category 5: The Black Box (Forensics)
+* **Cryptographic Ledger:** A blockchain-style, FNV-1a hash chain that ensures audit logs are immutable and tamper-proof.
+* **Supply Chain Auditor:** Real-time CVE scanning against the workspace's `package.json` for known-malware dependencies.
+* **Predictive Blast Radius:** Recursive import scanner that visually maps exactly what will break in your project before you approve a file deletion.
+
+### 🖥️ 2080 Command Center (UI/UX)
+* **FUI Tactical Dashboard:** A hyper-dense HUD featuring emerald telemetry, radioactive amber alerts, and a micro-grid CSS overlay.
+* **Geo-Spatial Threat Map:** 3D wireframe globe visualization of outbound exfiltration trajectories.
+* **Character-Scramble Animation:** 800ms "Monospace Decryption" effects for high-priority threat logs in the Interception Matrix.
+* **One-Click Forensic Export:** Generates comprehensive, localized CSV reports for professional security audits.
 
 ---
 
@@ -80,9 +107,9 @@ Kavach acts as an emergency brake for your operating system and requires deep sy
 
 We are continuously expanding the perimeter. Planned features for the next major deployment:
 
-* **The Faraday Clipboard:** Intercept and block background agents from reading your OS clipboard history without explicit user consent.
-* **Biometric "Nuclear" Authorization:** Hook into native OS hardware (TouchID / Windows Hello) to require physical fingerprint verification before an agent can touch `CRITICAL_LOCKED` directories.
-* **Blast Radius Predictor:** AST parsing to visually simulate what will break in your project *before* you approve an agent's file deletion.
+* **Linux Native Support:** Extending the low-level Rust `notify` hooks to support `eBPF` for Ubuntu/Debian environments.
+* **Multi-Agent Swarm Sandbox:** Network-isolated environments for coordinating multiple agents simultaneously without cross-contamination.
+* **Decentralized Threat Intelligence:** Opt-in, privacy-preserving telemetry to share zero-day AI behavioral patterns across the Kavach user network.
 
 ---
 
