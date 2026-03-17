@@ -10,6 +10,11 @@
 
 <br>
 
+<a href="https://www.producthunt.com/products/kavach?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-kavach" target="_blank" rel="noopener noreferrer"><img alt="Kavach - Tactical Zero-Trust OS Firewall for Local AI Agents | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1098249&amp;theme=light&amp;t=1773791260859"></a>
+
+<br>
+<br>
+
 ![Kavach Dashboard Demo](./kavach-demo.gif)
 
 <br>
