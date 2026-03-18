@@ -6,7 +6,7 @@
 ![Tauri](https://img.shields.io/badge/Tauri-v2-FFC107?logo=tauri&logoColor=white&style=for-the-badge) 
 ![Rust](https://img.shields.io/badge/Rust-Stable-000000?logo=rust&logoColor=white&style=for-the-badge) 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white&style=for-the-badge) 
-![License](https://img.shields.io/badge/License-MIT-emerald?style=for-the-badge)
+![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)
 
 <br>
 
@@ -101,4 +101,4 @@ Kavach features a "Direct Line" communication module for users to report anomali
 
 ## 📜 License
 
-Kavach is proudly released as freeware under the **MIT License**. Permanent attribution to **Akshay Sharma** is required in all forks, distributions, and derivatives.
+Kavach is proudly released under the **GNU General Public License v3.0 (GPL-3.0)**. Permanent attribution to **Akshay Sharma** is required in all forks, distributions, and derivatives, and any modifications must remain open source under the same license terms.
