@@ -227,6 +227,14 @@ const ShieldPanel = () => {
               </button>
             </div>
             <span className="hud-label text-[10px]">BLOCKED: {clipGuard.blocked_attempts} attempts</span>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-1.5 h-1.5 bg-hud-emerald"></span>
+              <span className="text-[9px] hud-data text-hud-emerald/60">SHANNON ENTROPY SCANNING: ACTIVE (v1.1)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-hud-cyan"></span>
+              <span className="text-[9px] hud-data text-hud-cyan/60">LINUX eBPF K-PROBES: READY (v1.1)</span>
+            </div>
           </div>
         )}
       </div>
@@ -472,6 +480,45 @@ const BlackBoxPanel = () => {
             ))}
           </div>
         )}
+      </div>
+
+      {/* SIEM Export Settings (v1.1) */}
+      <div className="hud-card p-4 flex flex-col gap-3 col-span-2">
+        <div className="flex items-center gap-2 border-b border-hud-cyan/30 pb-2">
+          <span className="w-2 h-2 bg-hud-cyan animate-pulse" />
+          <span className="hud-title text-xs text-hud-cyan tracking-widest">SIEM EXPORT HOOKS (v1.1)</span>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="hud-label text-[10px]">WEBHOOK URL (SPLUNK / DATADOG)</span>
+            <input 
+              id="siem-webhook"
+              type="text" 
+              placeholder="https://siem-collector.internal/v1/log"
+              className="bg-black/60 border border-hud-cyan-border/20 text-hud-text-primary px-3 py-2 text-[10px] font-mono outline-none focus:border-hud-cyan"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="hud-label text-[10px]">LOCAL JSON LOG PATH</span>
+            <input 
+              id="siem-path"
+              type="text" 
+              placeholder="C:\ProgramData\Kavach\logs\audit.json"
+              className="bg-black/60 border border-hud-cyan-border/20 text-hud-text-primary px-3 py-2 text-[10px] font-mono outline-none focus:border-hud-cyan"
+            />
+          </div>
+        </div>
+        <button 
+          onClick={async () => {
+            const webhook = (document.getElementById('siem-webhook') as HTMLInputElement).value;
+            const path = (document.getElementById('siem-path') as HTMLInputElement).value;
+            await invoke('configure_siem', { webhookUrl: webhook || null, logPath: path || null });
+            alert("SIEM Configuration Updated");
+          }}
+          className="self-start px-4 py-2 bg-hud-cyan/10 border border-hud-cyan text-hud-cyan hud-data text-xs hover:bg-hud-cyan hover:text-black transition-all cursor-pointer"
+        >
+          [ SAVE SIEM CONFIG ]
+        </button>
       </div>
 
       {/* Supply Chain Scanner */}

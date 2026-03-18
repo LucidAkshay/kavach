@@ -3,11 +3,17 @@
 export interface InterceptedAction {
   id: string;
   agent_name: string;
-  action_type: string; // Loosened to allow "CRITICAL_VELOCITY | ..." etc.
+  action_type: string;
   target_path: string;
   risk_level: "High" | "Medium" | "Low";
   timestamp: string;
-  status: string; // Loosened for flexibility
+  status: string;
+  pid?: number; // v1.1
+}
+
+export interface SiemConfig {
+  webhook_url?: string;
+  log_path?: string;
 }
 
 export interface MonitoringStats {

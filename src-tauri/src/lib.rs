@@ -1,10 +1,15 @@
+mod ebpf_mon;
+mod clipboard;
+mod honeypot;
+mod siem;
+
 use tauri::{AppHandle, Manager, Emitter, State};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::sync::Mutex;
 use std::collections::HashMap;
-use std::time::SystemTime;
+use std::time::{SystemTime, Duration};
 use std::thread;
 use std::ffi::OsStr;
 use uuid::Uuid;
@@ -13,6 +18,11 @@ use fs_extra::dir::CopyOptions as DirCopyOptions;
 use sysinfo::System;
 use chrono;
 use regex::Regex;
+use std::sync::Arc;
+use tokio;
+use reqwest;
+use base64;
+use crate::honeypot::deploy_honeypot;
 
 // ── Data Models ──────────────────────────────────────────────
 
@@ -25,6 +35,7 @@ pub struct InterceptedAction {
     pub risk_level: String,
     pub timestamp: String,
     pub status: String,
+    pub pid: Option<u32>, // v1.1: Added PID for SIEM compatibility
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +78,10 @@ static INTERCEPTED_ACTIONS: Mutex<Vec<InterceptedAction>> = Mutex::new(Vec::new(
 // Phase 25 Cat.1: Cognitive State
 static COMMAND_HISTORY: Mutex<Option<Vec<String>>> = Mutex::new(None);
 static CHOKEHOLD_PIDS: Mutex<Option<Vec<u32>>> = Mutex::new(None);
+
+// v1.1 Maintenance State
+static MAX_CACHE_SIZE_MB: Mutex<u64> = Mutex::new(500);
+static MAX_CACHE_AGE_HOURS: Mutex<u64> = Mutex::new(24);
 
 // ── Quarantine Logic ─────────────────────────────────────────
 
@@ -164,6 +179,52 @@ fn cache_for_temporal_rollback(target_path: &str, action_id: &str) {
     }
 }
 
+// ── Feature 3: Temporal Maintenance Thread ──────────────────
+
+fn start_maintenance_thread() {
+    thread::spawn(move || {
+        loop {
+            let cache_dir = get_temporal_cache_dir();
+            if cache_dir.exists() {
+                let max_size = *MAX_CACHE_SIZE_MB.lock().unwrap() * 1024 * 1024;
+                let max_age = Duration::from_secs(*MAX_CACHE_AGE_HOURS.lock().unwrap() * 3600);
+                
+                if let Ok(entries) = fs::read_dir(&cache_dir) {
+                    let mut files: Vec<(PathBuf, SystemTime, u64)> = Vec::new();
+                    let mut current_size = 0;
+
+                    for entry in entries.flatten() {
+                        if let Ok(meta) = entry.metadata() {
+                            if let Ok(modified) = meta.modified() {
+                                files.push((entry.path(), modified, meta.len()));
+                                current_size += meta.len();
+                            }
+                        }
+                    }
+
+                    // Sort by modification time (oldest first)
+                    files.sort_by(|a, b| a.1.cmp(&b.1));
+
+                    let now = SystemTime::now();
+                    for (path, modified, size) in files {
+                        let age = now.duration_since(modified).unwrap_or_default();
+                        
+                        // Delete if too old OR if still over size limit
+                        if age > max_age || current_size > max_size {
+                            if let Err(e) = fs::remove_file(&path) {
+                                eprintln!("[KAVACH JANITOR] Failed to delete cache file {:?}: {}", path, e);
+                            } else {
+                                current_size -= size;
+                            }
+                        }
+                    }
+                }
+            }
+            thread::sleep(Duration::from_secs(3600)); // Run every hour
+        }
+    });
+}
+
 // ── Helper Functions ─────────────────────────────────────────
 
 fn classify_risk(kind: &EventKind, path: &str) -> (&'static str, &'static str) {
@@ -227,6 +288,17 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = RecommendedWatcher::new(tx, Config::default()).map_err(|e| e.to_string())?;
     watcher.watch(Path::new(&path), RecursiveMode::Recursive).map_err(|e| e.to_string())?;
+
+    // v1.1: Initialize eBPF if Linux
+    let mut ebpf = ebpf_mon::EbpfMonitor::new();
+    let _ = ebpf.start(); // Log errors but don't crash
+
+    // v1.1: Initialize Clipboard Guard
+    let clip_guard = clipboard::FaradayGuard::new(
+        Arc::clone(&CLIPBOARD_GUARD_ARMED),
+        Arc::clone(&CLIPBOARD_BLOCKED_COUNT_ARC)
+    );
+    clip_guard.start_monitoring();
 
     // Store watcher in state to keep it alive
     let mut state_watcher = state.watcher.lock().unwrap();
@@ -321,7 +393,14 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
                             action_type: if is_high_velocity { format!("HIGH_VELOCITY | {}", action_type) } else { action_type.to_string() },
                             risk_level: final_risk_level,
                             status: if is_maintenance { "AUTO-APPROVED: SYSTEM MAINTENANCE".to_string() } else { "pending".to_string() },
+                            pid: None, // In production, resolve via sysinfo or eBPF
                         };
+
+                        // v1.1: SIEM Logging
+                        let action_clone = action.clone();
+                        tokio::spawn(async move {
+                            siem::log_to_siem(&action_clone).await;
+                        });
 
                         INTERCEPTED_ACTIONS.lock().unwrap().push(action.clone());
                         let _ = app_handle.emit("intercepted-action", &action);
@@ -537,7 +616,7 @@ fn toggle_ghost_mode(_app: AppHandle, enabled: bool) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn simulate_network_request(app: AppHandle, domain: String, payload: String) -> Result<serde_json::Value, String> {
+fn simulate_network_request(app: AppHandle, domain: String, _payload: String) -> Result<serde_json::Value, String> {
     let ghost_mode = *GHOST_MODE_ENABLED.lock().unwrap();
     let country = match domain.as_str() {
         d if d.contains(".ru") => "RUSSIAN FEDERATION",
@@ -561,7 +640,15 @@ fn simulate_network_request(app: AppHandle, domain: String, payload: String) -> 
         risk_level: "High".to_string(),
         timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         status: if ghost_mode { "ghosted".to_string() } else { "intercepted".to_string() },
+        pid: None,
     };
+
+    // v1.1 SIEM
+    let action_clone = action.clone();
+    tokio::spawn(async move {
+        siem::log_to_siem(&action_clone).await;
+    });
+
     INTERCEPTED_ACTIONS.lock().unwrap().push(action.clone());
     let _ = app.emit("intercepted-action", &action);
     
@@ -592,7 +679,15 @@ fn test_signal(app: AppHandle) -> Result<String, String> {
         risk_level: "Medium".to_string(),
         timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         status: "pending".to_string(),
+        pid: None,
     };
+
+    // v1.1 SIEM
+    let action_clone = action.clone();
+    tokio::spawn(async move {
+        siem::log_to_siem(&action_clone).await;
+    });
+
     INTERCEPTED_ACTIONS.lock().unwrap().push(action.clone());
     let _ = app.emit("intercepted-action", &action);
     Ok("Test signal emitted".to_string())
@@ -611,21 +706,6 @@ async fn verify_biometrics() -> Result<bool, String> {
 fn get_actions(_app: AppHandle) -> Result<Vec<InterceptedAction>, String> {
     let actions = INTERCEPTED_ACTIONS.lock().unwrap();
     Ok(actions.clone())
-}
-
-#[tauri::command]
-fn deploy_honeypot(_app: AppHandle) -> Result<String, String> {
-    let monitored_base = MONITORED_PATH.lock().unwrap().clone();
-    if monitored_base.is_empty() {
-        return Err("Cannot deploy honeypot while monitoring is paused.".to_string());
-    }
-    
-    let path = Path::new(&monitored_base).join("system_auth_tokens.json");
-    let content = "{\"mock_token\": \"abc-123\", \"access_level\": \"admin\"}";
-    
-    fs::write(&path, content).map_err(|e| e.to_string())?;
-    println!("[KAVACH] Honeypot deployed to: {:?}", path);
-    Ok(format!("Honeypot deployed to {:?}", path))
 }
 
 // ── Phase 25 Cat.1: Cognitive & Behavioral Restraints ────────
@@ -833,14 +913,17 @@ pub struct ClipboardGuardStatus {
     pub last_blocked_process: String,
 }
 
-static CLIPBOARD_GUARD_ARMED: Mutex<bool> = Mutex::new(true);
-static CLIPBOARD_BLOCKED_COUNT: Mutex<usize> = Mutex::new(0);
+static CLIPBOARD_GUARD_ARMED: std::sync::LazyLock<std::sync::Arc<std::sync::Mutex<bool>>> = 
+    std::sync::LazyLock::new(|| std::sync::Arc::new(std::sync::Mutex::new(true)));
+
+static CLIPBOARD_BLOCKED_COUNT_ARC: std::sync::LazyLock<std::sync::Arc<std::sync::Mutex<usize>>> = 
+    std::sync::LazyLock::new(|| std::sync::Arc::new(std::sync::Mutex::new(0)));
 
 #[tauri::command]
 fn toggle_clipboard_guard(_app: AppHandle, armed: bool) -> Result<ClipboardGuardStatus, String> {
     let mut guard = CLIPBOARD_GUARD_ARMED.lock().unwrap();
     *guard = armed;
-    let count = *CLIPBOARD_BLOCKED_COUNT.lock().unwrap();
+    let count = *CLIPBOARD_BLOCKED_COUNT_ARC.lock().unwrap();
     println!("[KAVACH FARADAY] Clipboard guard {} (blocked: {})", if armed { "ARMED" } else { "DISARMED" }, count);
     Ok(ClipboardGuardStatus {
         is_armed: armed,
@@ -1029,7 +1112,15 @@ fn inject_poisoned_context(app: AppHandle, agent_name: String) -> Result<Poisone
         risk_level: "High".to_string(),
         timestamp: ts.clone(),
         status: "completed".to_string(),
+        pid: None,
     };
+
+    // v1.1 SIEM
+    let action_clone = action.clone();
+    tokio::spawn(async move {
+        siem::log_to_siem(&action_clone).await;
+    });
+
     INTERCEPTED_ACTIONS.lock().unwrap().push(action.clone());
     let _ = app.emit("intercepted-action", &action);
     println!("[KAVACH POISON] Injected mock override payload to agent '{}'", agent_name);
@@ -1240,7 +1331,13 @@ pub fn run() {
             verify_audit_chain,
             scan_supply_chain,
             predict_blast_radius,
+            // v1.1
+            siem::configure_siem,
         ])
+        .setup(|_app| {
+            start_maintenance_thread();
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
