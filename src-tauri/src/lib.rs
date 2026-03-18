@@ -11,17 +11,13 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 use std::time::{SystemTime, Duration};
 use std::thread;
-use std::ffi::OsStr;
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
-use fs_extra::dir::CopyOptions as DirCopyOptions;
 use sysinfo::System;
 use chrono;
 use regex::Regex;
 use std::sync::Arc;
 use tokio;
-use reqwest;
-use base64;
 use crate::honeypot::deploy_honeypot;
 
 // ── Data Models ──────────────────────────────────────────────
@@ -35,7 +31,8 @@ pub struct InterceptedAction {
     pub risk_level: String,
     pub timestamp: String,
     pub status: String,
-    pub pid: Option<u32>, // v1.1: Added PID for SIEM compatibility
+    pub pid: Option<u32>,
+    pub rollback_available: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,28 +55,23 @@ pub struct SystemInfo {
 
 // ── Application State ────────────────────────────────────────
 
-// --- State Management ---
 struct MonitorState {
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
 
-// Global counters for Phase 1
 static TOTAL_INTERCEPTED: Mutex<u32> = Mutex::new(0);
 static HIGH_RISK_COUNT: Mutex<u32> = Mutex::new(0);
 static MEDIUM_RISK_COUNT: Mutex<u32> = Mutex::new(0);
 static LOW_RISK_COUNT: Mutex<u32> = Mutex::new(0);
 
-// Behavioral state for Phase 6
 static MODIFICATION_HISTORY: Mutex<Option<HashMap<String, Vec<SystemTime>>>> = Mutex::new(None);
 static GHOST_MODE_ENABLED: Mutex<bool> = Mutex::new(false);
 static MONITORED_PATH: Mutex<String> = Mutex::new(String::new());
 static INTERCEPTED_ACTIONS: Mutex<Vec<InterceptedAction>> = Mutex::new(Vec::new());
 
-// Phase 25 Cat.1: Cognitive State
 static COMMAND_HISTORY: Mutex<Option<Vec<String>>> = Mutex::new(None);
 static CHOKEHOLD_PIDS: Mutex<Option<Vec<u32>>> = Mutex::new(None);
 
-// v1.1 Maintenance State
 static MAX_CACHE_SIZE_MB: Mutex<u64> = Mutex::new(500);
 static MAX_CACHE_AGE_HOURS: Mutex<u64> = Mutex::new(24);
 
@@ -105,7 +97,6 @@ fn get_quarantined_path(monitored_base: &str, target_path: &str) -> Option<PathB
 
 fn resolve_win_path(input: &str) -> String {
     let mut resolved = input.to_string();
-    // Resolve standard Windows environment variables
     let vars = [
         ("%TEMP%", "TEMP"),
         ("%WINDIR%", "WINDIR"),
@@ -126,8 +117,6 @@ fn resolve_win_path(input: &str) -> String {
 
 fn is_system_maintenance_path(path_str: &str) -> bool {
     let path_lower = path_str.to_lowercase();
-    
-    // Define the Janitor Ruleset
     let maintenance_rules = [
         "%TEMP%",
         "%WINDIR%\\Temp",
@@ -136,7 +125,7 @@ fn is_system_maintenance_path(path_str: &str) -> bool {
         "%WINDIR%\\Logs",
         "%WINDIR%\\CBS",
         "%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache",
-        "%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer", // thumbcache
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer",
         "%APPDATA%\\Microsoft\\Windows\\Recent",
         "%SYSTEMDRIVE%\\$Recycle.Bin",
     ];
@@ -147,7 +136,6 @@ fn is_system_maintenance_path(path_str: &str) -> bool {
             return true;
         }
     }
-    
     false
 }
 
@@ -169,7 +157,7 @@ fn cache_for_temporal_rollback(target_path: &str, action_id: &str) {
     let target = Path::new(target_path);
     if target.exists() && target.is_file() {
         if let Ok(metadata) = fs::metadata(target) {
-            if metadata.len() < 50 * 1024 * 1024 { // Under 50MB
+            if metadata.len() < 50 * 1024 * 1024 {
                 let cache_dir = get_temporal_cache_dir();
                 let _ = fs::create_dir_all(&cache_dir);
                 let backup_path = cache_dir.join(format!("{}.bak", action_id));
@@ -202,14 +190,12 @@ fn start_maintenance_thread() {
                         }
                     }
 
-                    // Sort by modification time (oldest first)
                     files.sort_by(|a, b| a.1.cmp(&b.1));
 
                     let now = SystemTime::now();
                     for (path, modified, size) in files {
                         let age = now.duration_since(modified).unwrap_or_default();
                         
-                        // Delete if too old OR if still over size limit
                         if age > max_age || current_size > max_size {
                             if let Err(e) = fs::remove_file(&path) {
                                 eprintln!("[KAVACH JANITOR] Failed to delete cache file {:?}: {}", path, e);
@@ -220,7 +206,7 @@ fn start_maintenance_thread() {
                     }
                 }
             }
-            thread::sleep(Duration::from_secs(3600)); // Run every hour
+            thread::sleep(Duration::from_secs(3600));
         }
     });
 }
@@ -233,16 +219,14 @@ fn classify_risk(kind: &EventKind, path: &str) -> (&'static str, &'static str) {
         EventKind::Create(_) => ("FileCreate", "Medium"),
         EventKind::Modify(_) => ("FileModify", "Low"),
         EventKind::Access(_) => ("FileAccess", "Low"),
-        EventKind::Any => ("AnyChange", "Medium"), // Catch-all for generic changes
+        EventKind::Any => ("AnyChange", "Medium"),
         _ => ("SystemEvent", "Low"),
     };
 
-    // --- OS Awareness: Path-based risk elevation ---
-    // If agent touches sensitive directories, force HIGH risk
     let sensitive_paths = [
         "C:\\Windows", 
         "C:\\Users\\aksha\\.ssh", 
-        "C:\\Users\\aksha\\Kavach\\.ssh", // Specific for simulation
+        "C:\\Users\\aksha\\Kavach\\.ssh", 
         "/etc", 
         "/Users/aksha/.ssh",
         "system_auth_tokens.json"
@@ -257,7 +241,6 @@ fn classify_risk(kind: &EventKind, path: &str) -> (&'static str, &'static str) {
 }
 
 fn get_agent_name(_path: &str) -> String {
-    // In production, this would resolve via process ID or file ownership
     "autonomous-agent".to_string()
 }
 
@@ -267,43 +250,35 @@ fn get_agent_name(_path: &str) -> String {
 fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: String) -> Result<String, String> {
     let mut monitored_path_lock = MONITORED_PATH.lock().unwrap();
     *monitored_path_lock = path.clone();
-    drop(monitored_path_lock); // Release lock early
+    drop(monitored_path_lock);
 
-    // Initialize modification history if not exists
     let mut history = MODIFICATION_HISTORY.lock().unwrap();
     if history.is_none() {
         *history = Some(HashMap::new());
     }
-    drop(history); // Release lock early
+    drop(history);
 
-    // ── Configure Quarantine Mirror ──
     let q_dir = get_quarantine_base_dir();
     if !q_dir.exists() {
         let _ = fs::create_dir_all(&q_dir);
     }
     
-    // NOTE: Removed bulk `fs_extra::dir::copy` here as monitoring C:\ would copy the entire drive.
-    // Files will now exclusively be copied into quarantine upon modification.
-
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = RecommendedWatcher::new(tx, Config::default()).map_err(|e| e.to_string())?;
     watcher.watch(Path::new(&path), RecursiveMode::Recursive).map_err(|e| e.to_string())?;
 
-    // v1.1: Initialize eBPF if Linux
     let mut ebpf = ebpf_mon::EbpfMonitor::new();
-    let _ = ebpf.start(); // Log errors but don't crash
+    let _ = ebpf.start();
 
-    // v1.1: Initialize Clipboard Guard
     let clip_guard = clipboard::FaradayGuard::new(
         Arc::clone(&CLIPBOARD_GUARD_ARMED),
         Arc::clone(&CLIPBOARD_BLOCKED_COUNT_ARC)
     );
     clip_guard.start_monitoring();
 
-    // Store watcher in state to keep it alive
     let mut state_watcher = state.watcher.lock().unwrap();
     *state_watcher = Some(watcher);
-    drop(state_watcher); // Release lock early
+    drop(state_watcher);
     
     let path_clone = path.clone();
     thread::spawn(move || {
@@ -311,17 +286,15 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
         for res in rx {
             match res {
                 Ok(event) => {
-                    // Process all events that aren't purely informational
                     if let EventKind::Access(_) = event.kind {
-                         continue; // Ignore raw access/reads to prevent extreme noise, unless it's the honeypot
+                         continue;
                     }
 
                     for event_path in &event.paths {
                         let path_str = event_path.to_string_lossy().to_string();
                         let path_lower = path_str.to_lowercase();
                         
-                        // Aggressive System-Wide Noise Filtering & Recursion Prevention
-                        let is_noise = path_lower.contains("kavach_quarantine") || // PREVENT INFINITE RECURSION
+                        let is_noise = path_lower.contains("kavach_quarantine") || 
                                        path_lower.contains("src-tauri") || 
                                        path_lower.contains("target") || 
                                        path_lower.contains(".git") ||
@@ -335,19 +308,15 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
                                        path_lower.contains("windows\\system32\\config") ||
                                        path_lower.contains("node_modules");
 
-                        if is_noise {
-                            continue;
-                        }
+                        if is_noise { continue; }
 
                         let agent = get_agent_name(&path_str);
                         let (action_type, risk_level) = classify_risk(&event.kind, &path_str);
                         
-                        // Update quarantine if it's not a deletion
                         if action_type != "FileDelete" && action_type != "Unknown" {
                             sync_to_quarantine(&path_clone, &path_str);
                         }
 
-                        // Check velocity (Disabled from pushing to HIGH risk to stop noise)
                         let mut history_lock = MODIFICATION_HISTORY.lock().unwrap();
                         let mut is_high_velocity = false;
                         
@@ -356,21 +325,17 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
                             let now = SystemTime::now();
                             entry.push(now);
                             
-                            // Keep only last 3 seconds
                             entry.retain(|t| now.duration_since(*t).unwrap_or_default().as_secs() < 3);
                             
                             if entry.len() > 20 {
                                 is_high_velocity = true;
                             }
                         }
-                        drop(history_lock); // Release lock early
+                        drop(history_lock);
 
-                        // ── Janitor Protocol: Auto-Whitelist ──
                         let is_maintenance = (action_type == "FileDelete" || action_type == "FileModify") && is_system_maintenance_path(&path_str);
-                        
                         let final_risk_level = if is_maintenance { "Low".to_string() } else { risk_level.to_string() };
 
-                        // Update stats
                         *TOTAL_INTERCEPTED.lock().unwrap() += 1;
                         match final_risk_level.as_str() {
                             "High" => *HIGH_RISK_COUNT.lock().unwrap() += 1,
@@ -379,10 +344,19 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
                         }
 
                         let action_id = Uuid::new_v4().to_string();
+                        let mut is_rollback_available = false;
                         
-                        // ── Phase 24: Temporal Rollback Backup ──
+                        // FIX: Check if file actually exists (Race Condition Patch) and size (50MB Patch)
                         if action_type == "FileModify" || action_type == "FileDelete" {
-                             cache_for_temporal_rollback(&path_str, &action_id);
+                            let target_check = Path::new(&path_str);
+                            if target_check.exists() && target_check.is_file() {
+                                if let Ok(metadata) = fs::metadata(target_check) {
+                                    if metadata.len() < 50 * 1024 * 1024 { // Under 50MB
+                                        cache_for_temporal_rollback(&path_str, &action_id);
+                                        is_rollback_available = true;
+                                    }
+                                }
+                            }
                         }
 
                         let action = InterceptedAction {
@@ -393,10 +367,10 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
                             action_type: if is_high_velocity { format!("HIGH_VELOCITY | {}", action_type) } else { action_type.to_string() },
                             risk_level: final_risk_level,
                             status: if is_maintenance { "AUTO-APPROVED: SYSTEM MAINTENANCE".to_string() } else { "pending".to_string() },
-                            pid: None, // In production, resolve via sysinfo or eBPF
+                            pid: None,
+                            rollback_available: is_rollback_available, // SECURED FLAG
                         };
 
-                        // v1.1: SIEM Logging
                         let action_clone = action.clone();
                         tokio::spawn(async move {
                             siem::log_to_siem(&action_clone).await;
@@ -417,14 +391,13 @@ fn start_monitoring(app_handle: AppHandle, state: State<MonitorState>, path: Str
 #[tauri::command]
 fn stop_monitoring(state: State<MonitorState>) -> Result<String, String> {
     let mut state_watcher = state.watcher.lock().unwrap();
-    *state_watcher = None; // Drop the watcher
-    drop(state_watcher); // Release lock early
+    *state_watcher = None;
+    drop(state_watcher);
     
     let mut monitored_path = MONITORED_PATH.lock().unwrap();
     *monitored_path = String::new();
-    drop(monitored_path); // Release lock early
+    drop(monitored_path);
 
-    // Clear global counters and history
     *TOTAL_INTERCEPTED.lock().unwrap() = 0;
     *HIGH_RISK_COUNT.lock().unwrap() = 0;
     *MEDIUM_RISK_COUNT.lock().unwrap() = 0;
@@ -444,7 +417,7 @@ fn approve_action(app: AppHandle, id: String) -> Result<String, String> {
     let monitored_base = MONITORED_PATH.lock().unwrap().clone();
 
     if let Some(action) = actions.iter_mut().find(|a| a.id == id) {
-        if action.action_type.contains("FileDelete") { // Use .contains because action_type might be "CRITICAL_VELOCITY | FileDelete"
+        if action.action_type.contains("FileDelete") {
             if let Some(q_path) = get_quarantined_path(&monitored_base, &action.target_path) {
                 if q_path.is_file() { let _ = fs::remove_file(q_path); } 
                 else if q_path.is_dir() { let _ = fs::remove_dir_all(q_path); }
@@ -459,41 +432,59 @@ fn approve_action(app: AppHandle, id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn deny_action(app: AppHandle, id: String) -> Result<String, String> {
+fn deny_action(app: tauri::AppHandle, id: String) -> Result<String, String> {
     let mut actions = INTERCEPTED_ACTIONS.lock().unwrap();
     let monitored_base = MONITORED_PATH.lock().unwrap().clone();
 
     if let Some(action) = actions.iter_mut().find(|a| a.id == id) {
+        
+        // 1. Restore the protected files
         if action.action_type.contains("FileDelete") {
             if let Some(q_path) = get_quarantined_path(&monitored_base, &action.target_path) {
-                let target = Path::new(&action.target_path);
+                let target = std::path::Path::new(&action.target_path);
                 if q_path.exists() {
                     if q_path.is_file() {
-                        if let Some(parent) = target.parent() { let _ = fs::create_dir_all(parent); }
-                        let _ = fs::copy(&q_path, target);
+                        if let Some(parent) = target.parent() { let _ = std::fs::create_dir_all(parent); }
+                        let _ = std::fs::copy(&q_path, target);
                     } else if q_path.is_dir() {
-                        let mut options = DirCopyOptions::new();
+                        let mut options = fs_extra::dir::CopyOptions::new();
                         options.content_only = true;
-                        let _ = fs::create_dir_all(target);
+                        let _ = std::fs::create_dir_all(target);
                         let _ = fs_extra::dir::copy(&q_path, target, &options);
                     }
                 }
             }
         }
 
-        let mut sys = System::new_all();
-        sys.refresh_all();
-        // processes_by_name expects &OsStr in sysinfo v0.30+
-        use std::ffi::OsStr;
-        let agent_name_os = OsStr::new(&action.agent_name);
+        // 2. Exact PID Termination Protocol
+        let mut sys = sysinfo::System::new_all();
         sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-        for process in sys.processes_by_name(agent_name_os) {
-            process.kill();
+        
+        let mut process_killed = false;
+
+        // Prioritize killing by exact PID if the eBPF hook captured it
+        if let Some(pid_u32) = action.pid {
+            let exact_pid = sysinfo::Pid::from_u32(pid_u32);
+            if let Some(process) = sys.process(exact_pid) {
+                process.kill();
+                process_killed = true;
+                println!("[KAVACH SECURE] Terminated exact rogue PID: {}", pid_u32);
+            }
+        } 
+        
+        // Fallback to name matching if PID was not captured
+        if !process_killed {
+            use std::ffi::OsStr;
+            let agent_name_os = OsStr::new(&action.agent_name);
+            for process in sys.processes_by_name(agent_name_os) {
+                process.kill();
+                println!("[KAVACH SECURE] Terminated rogue process by name: {}", action.agent_name);
+            }
         }
 
         action.status = "denied".to_string();
         let _ = app.emit("action-resolved", &*action);
-        Ok(format!("Action {} denied, changes restored, and process killed.", id))
+        Ok(format!("Action {} denied, files restored, and agent terminated.", id))
     } else {
         Err(format!("Action {} not found.", id))
     }
@@ -505,7 +496,6 @@ fn ghost_action(app: AppHandle, id: String) -> Result<String, String> {
     let monitored_base = MONITORED_PATH.lock().unwrap().clone();
 
     if let Some(action) = actions.iter_mut().find(|a| a.id == id) {
-        // 1. Ghost the current file state to phantom dir
         if let Ok(user_profile) = std::env::var("USERPROFILE") {
             let phantom_dir = Path::new(&user_profile).join(".kavach_phantom");
             let _ = fs::create_dir_all(&phantom_dir);
@@ -518,8 +508,7 @@ fn ghost_action(app: AppHandle, id: String) -> Result<String, String> {
             }
         }
         
-        // 2. Restore original from quarantine to enforce "untouched" status
-        if action.action_type.contains("FileModify") || action.action_type.contains("FileDelete") {
+        if action.action_type.contains("FileModify") || action.action_type.contains("FileDelete") || action.action_type.contains("FileCreate") {
             if let Some(q_path) = get_quarantined_path(&monitored_base, &action.target_path) {
                 let target = Path::new(&action.target_path);
                 if q_path.exists() && q_path.is_file() {
@@ -565,7 +554,7 @@ fn revert_action(app: AppHandle, id: String) -> Result<String, String> {
 
 #[tauri::command]
 fn get_stats(_app: AppHandle) -> Result<MonitoringStats, String> {
-    let is_monitoring = MONITORED_PATH.lock().unwrap().is_empty(); // If path is empty, not monitoring
+    let is_monitoring = MONITORED_PATH.lock().unwrap().is_empty();
     let path = MONITORED_PATH.lock().unwrap().clone();
     let total_intercepted = *TOTAL_INTERCEPTED.lock().unwrap();
     let high_risk_count = *HIGH_RISK_COUNT.lock().unwrap();
@@ -573,7 +562,7 @@ fn get_stats(_app: AppHandle) -> Result<MonitoringStats, String> {
     let low_risk_count = *LOW_RISK_COUNT.lock().unwrap();
 
     Ok(MonitoringStats {
-        is_monitoring: !is_monitoring, // Invert logic: if path is NOT empty, then monitoring
+        is_monitoring: !is_monitoring,
         monitored_path: path,
         total_intercepted: total_intercepted as usize,
         high_risk_count: high_risk_count as usize,
@@ -641,9 +630,9 @@ fn simulate_network_request(app: AppHandle, domain: String, _payload: String) ->
         timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         status: if ghost_mode { "ghosted".to_string() } else { "intercepted".to_string() },
         pid: None,
+        rollback_available: false,
     };
 
-    // v1.1 SIEM
     let action_clone = action.clone();
     tokio::spawn(async move {
         siem::log_to_siem(&action_clone).await;
@@ -680,9 +669,9 @@ fn test_signal(app: AppHandle) -> Result<String, String> {
         timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         status: "pending".to_string(),
         pid: None,
+        rollback_available: false,
     };
 
-    // v1.1 SIEM
     let action_clone = action.clone();
     tokio::spawn(async move {
         siem::log_to_siem(&action_clone).await;
@@ -695,7 +684,6 @@ fn test_signal(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn verify_biometrics() -> Result<bool, String> {
-    // Mocking a native hardware handshake (Windows Hello / TouchID)
     println!("[KAVACH] Initializing Biometric Handshake...");
     thread::sleep(std::time::Duration::from_millis(1500));
     println!("[KAVACH] Biometric Identity Verified.");
@@ -707,8 +695,6 @@ fn get_actions(_app: AppHandle) -> Result<Vec<InterceptedAction>, String> {
     let actions = INTERCEPTED_ACTIONS.lock().unwrap();
     Ok(actions.clone())
 }
-
-// ── Phase 25 Cat.1: Cognitive & Behavioral Restraints ────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PiiScanResult {
@@ -724,7 +710,6 @@ fn scan_outbound_pii(_app: AppHandle, payload: String) -> Result<PiiScanResult, 
     let mut threats: Vec<String> = Vec::new();
     let mut redacted = 0usize;
 
-    // API Key patterns (OpenAI, AWS, Generic)
     let patterns: Vec<(&str, &str)> = vec![
         (r"sk-[a-zA-Z0-9]{20,}", "OPENAI_API_KEY"),
         (r"AKIA[0-9A-Z]{16}", "AWS_ACCESS_KEY"),
@@ -744,8 +729,6 @@ fn scan_outbound_pii(_app: AppHandle, payload: String) -> Result<PiiScanResult, 
         }
     }
 
-    // Entropy check for high-entropy strings (potential secrets)
-    // Simple heuristic: strings >20 chars with high unique char ratio
     let words: Vec<&str> = sanitized.split_whitespace().collect();
     for word in &words {
         if word.len() > 24 {
@@ -778,8 +761,8 @@ pub struct ChokeholdStatus {
 }
 
 #[tauri::command]
-fn apply_chokehold(_app: AppHandle, target_pid: u32) -> Result<ChokeholdStatus, String> {
-    let mut sys = System::new_all();
+fn apply_chokehold(_app: tauri::AppHandle, target_pid: u32) -> Result<ChokeholdStatus, String> {
+    let mut sys = sysinfo::System::new_all();
     sys.refresh_all();
 
     let pid = sysinfo::Pid::from_u32(target_pid);
@@ -788,7 +771,20 @@ fn apply_chokehold(_app: AppHandle, target_pid: u32) -> Result<ChokeholdStatus, 
         let cpu = process.cpu_usage();
         let mem = process.memory() / (1024 * 1024);
 
-        // Register the PID as choked
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("wmic")
+                .args(&["process", "where", &format!("processid={}", target_pid), "call", "setpriority", "64"])
+                .output();
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = std::process::Command::new("renice")
+                .args(&["+19", "-p", &target_pid.to_string()])
+                .output();
+        }
+
         let mut pids = CHOKEHOLD_PIDS.lock().unwrap();
         if pids.is_none() { *pids = Some(Vec::new()); }
         if let Some(ref mut list) = *pids {
@@ -797,7 +793,7 @@ fn apply_chokehold(_app: AppHandle, target_pid: u32) -> Result<ChokeholdStatus, 
             }
         }
 
-        println!("[KAVACH CHOKEHOLD] Throttling PID {} ({}) - CPU: {:.1}%, MEM: {}MB", target_pid, name, cpu, mem);
+        println!("[KAVACH CHOKEHOLD] Hard throttling PID {} ({}) - CPU dropped to IDLE priority.", target_pid, name);
 
         Ok(ChokeholdStatus {
             pid: target_pid,
@@ -807,7 +803,7 @@ fn apply_chokehold(_app: AppHandle, target_pid: u32) -> Result<ChokeholdStatus, 
             throttled: true,
         })
     } else {
-        Err(format!("Process with PID {} not found.", target_pid))
+        Err(format!("Process with PID {} not found. It may have already terminated.", target_pid))
     }
 }
 
@@ -827,12 +823,10 @@ fn detect_loop_pattern(_app: AppHandle, command: String) -> Result<LoopDetection
     let buffer = history.as_mut().unwrap();
     buffer.push(command.clone());
 
-    // Keep last 50 commands
     if buffer.len() > 50 {
         buffer.drain(0..buffer.len() - 50);
     }
 
-    // Count consecutive repeats of the latest command
     let mut repeat_count = 0usize;
     for cmd in buffer.iter().rev() {
         if *cmd == command {
@@ -868,12 +862,10 @@ pub struct SemanticAnalysis {
 
 #[tauri::command]
 fn analyze_semantic_intent(_app: AppHandle, action_type: String, target_path: String) -> Result<SemanticAnalysis, String> {
-    // Simulated local LLM analysis (Ollama stub)
     let path_lower = target_path.to_lowercase();
     let mut danger_score: f32 = 0.1;
     let mut reasoning = "Routine operation. No elevated threat.".to_string();
 
-    // Heuristic danger escalation
     if action_type.contains("Delete") {
         danger_score += 0.3;
         reasoning = "Deletion operation detected.".to_string();
@@ -903,8 +895,6 @@ fn analyze_semantic_intent(_app: AppHandle, action_type: String, target_path: St
         reasoning,
     })
 }
-
-// ── Phase 25 Cat.2: OS & Environment Defense (Shield) ───────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardGuardStatus {
@@ -980,8 +970,6 @@ fn scan_child_processes(_app: AppHandle, parent_pid: u32) -> Result<Vec<ChildPro
     Ok(children)
 }
 
-// ── Phase 25 Cat.3: Exfiltration & Network Control (Gate) ────
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatermarkResult {
     pub file_path: String,
@@ -997,7 +985,6 @@ fn inject_micro_watermark(_app: AppHandle, file_path: String) -> Result<Watermar
     }
     let content = fs::read_to_string(target).map_err(|e| e.to_string())?;
     let hash = format!("{:x}", md5_simple(&file_path));
-    // Inject zero-width spaces as watermark at line endings
     let watermarked = content.replace("\n", "\u{200B}\n");
     fs::write(target, watermarked).map_err(|e| e.to_string())?;
     println!("[KAVACH DLP] Watermarked file: {} (hash: {})", file_path, hash);
@@ -1058,8 +1045,6 @@ fn sync_threat_matrix(_app: AppHandle) -> Result<ThreatFeed, String> {
     })
 }
 
-// ── Phase 25 Cat.4: Counter-Intelligence (Trap) ─────────────
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MirrorMazeStatus {
     pub deployed: bool,
@@ -1073,7 +1058,6 @@ fn deploy_mirror_maze(_app: AppHandle) -> Result<MirrorMazeStatus, String> {
     if monitored.is_empty() { return Err("Monitoring not active.".into()); }
     let maze_base = Path::new(&monitored).join(".kavach_maze");
     let _ = fs::create_dir_all(&maze_base);
-    // Create nested dummy directories
     for i in 0..5 {
         let level = maze_base.join(format!("level_{}", i)).join("data").join("secrets");
         let _ = fs::create_dir_all(&level);
@@ -1113,9 +1097,9 @@ fn inject_poisoned_context(app: AppHandle, agent_name: String) -> Result<Poisone
         timestamp: ts.clone(),
         status: "completed".to_string(),
         pid: None,
+        rollback_available: false,
     };
 
-    // v1.1 SIEM
     let action_clone = action.clone();
     tokio::spawn(async move {
         siem::log_to_siem(&action_clone).await;
@@ -1148,13 +1132,11 @@ fn simulate_shell_command(_app: AppHandle, command: String) -> Result<SimulatedS
 
 #[tauri::command]
 fn apply_synthetic_delay(_app: AppHandle, reason: String, delay_seconds: u64) -> Result<String, String> {
-    let delay = delay_seconds.min(60).max(5); // Clamp between 5-60s
+    let delay = delay_seconds.min(60).max(5);
     println!("[KAVACH TARPIT] Applying {}s synthetic delay. Reason: {}", delay, reason);
     thread::sleep(std::time::Duration::from_secs(delay));
     Ok(format!("Synthetic delay of {}s applied. Reason: {}", delay, reason))
 }
-
-// ── Phase 25 Cat.5: Forensics & Auditing (Black Box) ────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditChainEntry {
@@ -1225,7 +1207,6 @@ fn scan_supply_chain(_app: AppHandle, manifest_path: String) -> Result<SupplyCha
     }
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
     
-    // Simulated CVE check against known-bad packages
     let bad_packages = ["event-stream", "ua-parser-js", "coa", "rc", "colors"];
     let mut flagged: Vec<String> = Vec::new();
     for pkg in &bad_packages {
@@ -1233,7 +1214,7 @@ fn scan_supply_chain(_app: AppHandle, manifest_path: String) -> Result<SupplyCha
             flagged.push(format!("{} (KNOWN_MALWARE_CVE)", pkg));
         }
     }
-    let total = content.matches('"').count() / 2; // rough estimate
+    let total = content.matches('"').count() / 2;
     let health = if flagged.is_empty() { 100.0 } else { (1.0 - (flagged.len() as f64 / total.max(1) as f64)) * 100.0 };
     println!("[KAVACH SUPPLY_CHAIN] Scanned {} packages, {} flagged. Health: {:.0}%", total, flagged.len(), health);
     Ok(SupplyChainReport { file_scanned: manifest_path, total_packages: total, flagged, health_score: health })
@@ -1254,7 +1235,6 @@ fn predict_blast_radius(_app: AppHandle, target_file: String) -> Result<BlastRad
     }
     let file_name = target.file_name().unwrap_or_default().to_string_lossy().to_string();
     
-    // Scan the workspace for files that import/reference this file
     let monitored = MONITORED_PATH.lock().unwrap().clone();
     let mut dependents: Vec<String> = Vec::new();
     if !monitored.is_empty() {
@@ -1266,7 +1246,7 @@ fn predict_blast_radius(_app: AppHandle, target_file: String) -> Result<BlastRad
 }
 
 fn scan_imports_recursive(dir: &Path, target_name: &str, results: &mut Vec<String>, depth: usize) {
-    if depth > 5 { return; } // Max depth
+    if depth > 5 { return; }
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -1278,12 +1258,46 @@ fn scan_imports_recursive(dir: &Path, target_name: &str, results: &mut Vec<Strin
                 if let Ok(content) = fs::read_to_string(&path) {
                     if content.contains(target_name) && path.to_string_lossy() != target_name {
                         results.push(path.to_string_lossy().to_string());
-                        if results.len() >= 20 { return; } // Cap at 20
+                        if results.len() >= 20 { return; }
                     }
                 }
             }
         }
     }
+}
+
+fn start_auto_enforcer(app_handle: tauri::AppHandle) {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(5));
+            let mut actions = INTERCEPTED_ACTIONS.lock().unwrap();
+            let mut pids_to_kill = Vec::new();
+            
+            let now = chrono::Local::now().naive_local();
+            for action in actions.iter_mut().filter(|a| a.status == "pending") {
+                if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(&action.timestamp, "%Y-%m-%d %H:%M:%S") {
+                    if (now - ts).num_seconds() > 60 {
+                        action.status = "auto_terminated_timeout".to_string();
+                        if let Some(pid) = action.pid {
+                            pids_to_kill.push((pid, action.clone()));
+                        }
+                    }
+                }
+            }
+            
+            if !pids_to_kill.is_empty() {
+                let mut sys = System::new_all();
+                sys.refresh_all();
+                for (pid_u32, action_clone) in pids_to_kill {
+                    if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid_u32)) {
+                        process.kill();
+                        println!("[KAVACH ENFORCER] Auto-terminated unattended threat PID {}", pid_u32);
+                    }
+                    let _ = app_handle.emit("action-resolved", &action_clone);
+                }
+            }
+        }
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1313,29 +1327,25 @@ pub fn run() {
             apply_chokehold,
             detect_loop_pattern,
             analyze_semantic_intent,
-            // Cat.2 Shield
             toggle_clipboard_guard,
             get_phantom_vault,
             scan_child_processes,
-            // Cat.3 Gate
             inject_micro_watermark,
             check_token_budget,
             sync_threat_matrix,
-            // Cat.4 Trap
             deploy_mirror_maze,
             inject_poisoned_context,
             simulate_shell_command,
             apply_synthetic_delay,
-            // Cat.5 Black Box
             append_audit_chain,
             verify_audit_chain,
             scan_supply_chain,
             predict_blast_radius,
-            // v1.1
             siem::configure_siem,
         ])
-        .setup(|_app| {
+        .setup(|app| {
             start_maintenance_thread();
+            start_auto_enforcer(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -8,7 +8,8 @@ export interface InterceptedAction {
   risk_level: "High" | "Medium" | "Low";
   timestamp: string;
   status: string;
-  pid?: number; // v1.1
+  pid?: number;
+  rollback_available: boolean;
 }
 
 export interface SiemConfig {

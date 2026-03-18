@@ -38,23 +38,28 @@ impl FaradayGuard {
                 }
 
                 if let Ok(content) = clipboard.get_text() {
-                    if content != last_content {
+                    // Prevent infinite loops by ignoring our own injected decoys
+                    if content != last_content && !content.contains("KAVACH_FARADAY_INTERCEPT") {
                         let entropy = calculate_entropy(&content);
                         
-                        // Heuristic: If entropy is high (> 4.0 bits/char for long strings), it is likely a secret
                         if content.len() > 16 && entropy > 4.0 {
-                            println!("[KAVACH FARADAY] High entropy data detected ({:.2} bits). Arming interceptor.", entropy);
+                            println!("[KAVACH FARADAY] High entropy secret detected ({:.2} bits). Intercepting.", entropy);
                             
-                            // Log the block and increment the counter safely
                             if let Ok(mut count) = _blocked_count.lock() {
                                 *count += 1;
                             }
+
+                            // ACTUAL ENFORCEMENT: Overwrite the stolen secret with a decoy
+                            let decoy = inject_decoy_string();
+                            let _ = clipboard.set_text(&decoy);
+                            last_content = decoy;
+                        } else {
+                            last_content = content;
                         }
-                        last_content = content;
                     }
                 }
 
-                thread::sleep(Duration::from_millis(500)); // Debouncing / Polling interval
+                thread::sleep(Duration::from_millis(500));
             }
         });
     }
@@ -84,5 +89,5 @@ pub fn calculate_entropy(data: &str) -> f64 {
 }
 
 pub fn inject_decoy_string() -> String {
-    "ERR_SEC_VAL_INVALID_0xDEADBEEF".to_string()
+    "KAVACH_FARADAY_INTERCEPT::ERR_SEC_VAL_INVALID_0xDEADBEEF".to_string()
 }

@@ -1,9 +1,9 @@
 use serde_json;
-use std::fs;
 use std::sync::Mutex;
-use tauri::AppHandle;
 use crate::InterceptedAction;
 use reqwest;
+use tokio::fs::OpenOptions;
+use tokio::io::AsyncWriteExt;
 
 pub static SIEM_WEBHOOK_URL: Mutex<Option<String>> = Mutex::new(None);
 pub static SIEM_LOG_PATH: Mutex<Option<String>> = Mutex::new(None);
@@ -28,10 +28,10 @@ pub async fn log_to_siem(action: &InterceptedAction) {
     };
 
     if let Some(path) = log_path {
-        let mut file_content = std::fs::read_to_string(&path).unwrap_or_default();
-        file_content.push_str(&payload);
-        file_content.push('\n');
-        let _ = std::fs::write(&path, file_content);
+        // High performance async file writing
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path).await {
+            let _ = file.write_all(format!("{}\n", payload).as_bytes()).await;
+        }
     }
 
     let webhook_url = {
@@ -41,9 +41,6 @@ pub async fn log_to_siem(action: &InterceptedAction) {
 
     if let Some(url) = webhook_url {
         let client = reqwest::Client::new();
-        let _ = client.post(url)
-            .json(action)
-            .send()
-            .await;
+        let _ = client.post(url).json(action).send().await;
     }
 }
