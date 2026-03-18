@@ -41,7 +41,7 @@ Kavach is armed with an exhaustive array of active defense mechanisms operating 
 * **Phantom Workspace:** Intercepts destructive file operations (Modify, Delete, Create) and silently routes them to a hidden `.kavach_phantom` directory to trap malicious payloads.
 * **The Auto Enforcer:** A ruthless background Rust thread. If an intercepted action sits pending in the UI for more than 60 seconds, Kavach automatically issues a hard OS termination signal to the rogue agent PID.
 * **Temporal Rollback:** Automatic cryptographic caching of file modifications. If a file is under 50MB, Kavach enables instant 1 click restoration. Large files are dynamically flagged in the UI as ineligible for rollback.
-* **Honeypot Decoy Architecture:** Deploys a "sugar trap" `system_auth_tokens.json` file. Any process attempting to read it triggers an immediate High Risk Lockdown.
+* **Honeypot Tripwire Architecture:** Safely deploys a "sugar trap" `system_auth_tokens.json` file. Any process attempting to read or modify the decoy instantly triggers a High Risk lockdown and a distinct TRAP TRIGGERED alarm. Decoys are automatically scrubbed when the session ends.
 
 ### 🦀 Core Security Engine (Rust Layer)
 * **High Velocity Loop Break:** Heuristic detection of repetitive command patterns (e.g. recursive `npm install` loops) to force automatic agent suspension.
@@ -60,15 +60,15 @@ Kavach is armed with an exhaustive array of active defense mechanisms operating 
 
 ***
 
-## 🚀 v1.2 Roadmap : True Sandboxing
+## 🚀 v1.2 Roadmap : True Sandboxing & Autonomous Defense
 
-Moving from an EDR tool to a true Zero Trust Sandbox requires native hardware drivers to pause system calls synchronously. These are currently under active development:
+Moving from a passive EDR tool to a true Zero Trust Sandbox requires native hardware drivers and autonomous intelligence. These are currently under active development:
 
+* **Autonomous Reasoning Loop (Local LLM):** A lightweight, internally hosted reasoning agent that will automatically triage events, correlate velocity spikes with honeypot triggers, and dynamically rotate decoys without human intervention.
 * **Linux eBPF Probes:** Kernel level hooks to intercept `sys_enter_openat` and `sys_enter_mkdir`.
 * **Windows Minifilters:** Native file system drivers for absolute Windows execution blocking.
 * **macOS Endpoint Security Framework (ESF):** Strict entitlements for Apple silicon.
 * **Network Ghost Mode:** Local root certificate authority for intercepting and spoofing TLS traffic without payload execution.
-* **Biometric Handshake:** Hardware level authentication (Windows Hello / TouchID) for critical perimeter approvals.
 
 ***
 
