@@ -43,6 +43,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Kavach ${{ github.ref_name }}'
-          releaseBody: 'Kavach Tactical Firewall deployment. See the assets below to download the installer for your OS.'
+          releaseBody: 'Kavach AI Workspace Monitor & EDR deployment. See the assets below to download the installer for your operating system.'
           releaseDraft: true
           prerelease: false
