@@ -29,7 +29,7 @@
 
 Autonomous AI agents are revolutionary, but they are inherently volatile. When they operate on your local file system, they move at superhuman speeds. A single hallucination can delete production databases, overwrite source code, or exfiltrate private API keys.
 
-**Architecture Transparency:** Kavach v1.0 operates as a high performance asynchronous file system observer using Userland APIs. It monitors designated workspaces, quarantines malicious actions, and provides immediate remediation tools. It is an EDR monitor, not a strict synchronous sandbox. True system call blocking requires kernel drivers, which are slated for our v1.2 roadmap.
+**Architecture Transparency:** Kavach v1.1.0 operates as a high performance asynchronous file system observer using Userland APIs. It monitors designated workspaces, quarantines malicious actions, and provides immediate remediation tools. It is an EDR monitor, not a strict synchronous sandbox. True system call blocking requires kernel drivers, which are slated for our v1.2 roadmap.
 
 ***
 
@@ -84,8 +84,8 @@ Kavach is built for absolute performance and zero latency, running entirely loca
 
 ## 💻 Zero Config Deployment
 
-1. **Download:** Grab the latest `.exe` (Windows) or `.dmg` (macOS) from the **[Releases Page](../../releases)**.
-2. **Launch:** Run `AkshaysKavach.exe`. *(Note: Windows requires running as Administrator for process termination; macOS requires Full Disk Access).*
+1. **Download:** Grab the latest installer for your operating system from the **[Releases Page](../../releases)**.
+2. **Launch:** Run the executable (e.g. `Akshays.Kavach_1.1.0_x64-setup.exe`). *(Note: Windows requires running as Administrator for process termination; macOS requires Full Disk Access).*
 3. **Arm:** Select your workspace directory in the UI. Kavach immediately locks down the perimeter.
 
 ***
@@ -101,4 +101,4 @@ Kavach features a "Direct Line" communication module for users to report anomali
 
 ## 📜 License
 
-Kavach is proudly released under the **GNU General Public License v3.0 (GPL-3.0)**. Permanent attribution to **Akshay Sharma** is required in all forks, distributions, and derivatives, and any modifications must remain open source under the same license terms.
+Kavach is proudly released under the **GNU General Public License v3.0 (GPLv3)**. Permanent attribution to **Akshay Sharma** is required in all forks, distributions, and derivatives, and any modifications must remain open source under the same license terms.
